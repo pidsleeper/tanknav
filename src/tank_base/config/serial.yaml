@@ -1,0 +1,17 @@
+chassis_driver_node:
+  ros__parameters:
+    port: /dev/ttyACM0
+    baudrate: 115200
+    base_frame: base_link
+    odom_frame: base_feedback
+    cmd_vel_topic: /cmd_vel
+    feedback_odom_topic: /base/feedback_odom
+    imu_topic: /base/raw_imu
+    battery_topic: /battery_state
+    motor_state_topic: /base/motor_enabled
+    cmd_rate_hz: 20.0
+    feedback_rate_hz: 50.0
+    cmd_timeout: 0.5
+    publish_imu: true
+    publish_feedback_odom: true
+    publish_feedback_tf: false

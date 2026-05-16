@@ -1,0 +1,40 @@
+# Recommended FAST-LIO2 config for Nav2 integration.
+# Important:
+# 1. Set world_frame to odom, so FAST-LIO2 provides the local odom frame Nav2 expects.
+# 2. body_frame is set to base_link for the simplest integration path.
+#    If MID360 is not mounted close to the robot origin, consider adding a dedicated
+#    pose/frame adapter later so FAST-LIO2 can track a sensor frame while Nav2 still
+#    consumes odom -> base_link.
+
+imu_topic: /livox/imu
+lidar_topic: /livox/lidar
+body_frame: base_link
+world_frame: odom
+print_time_cost: false
+
+lidar_filter_num: 6
+lidar_min_range: 0.5
+lidar_max_range: 30.0
+scan_resolution: 0.15
+map_resolution: 0.3
+
+cube_len: 300
+det_range: 60
+move_thresh: 1.5
+
+na: 0.01
+ng: 0.01
+nba: 0.0001
+nbg: 0.0001
+
+imu_init_num: 20
+near_search_num: 5
+ieskf_max_iter: 5
+
+gravity_align: true
+esti_il: false
+
+r_il: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+t_il: [-0.011, -0.02329, 0.04412]
+
+lidar_cov_inv: 1000.0

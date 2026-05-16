@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>tank_bringup</name>
+  <version>0.0.1</version>
+  <description>Bringup package for MID360 + FAST-LIO2 + Nav2 based tank platform.</description>
+
+  <maintainer email="sgj@example.com">sgj</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>tank_base</exec_depend>
+  <exec_depend>tank_nav2</exec_depend>
+  <exec_depend>fastlio2</exec_depend>
+  <exec_depend>localizer</exec_depend>
+  <exec_depend>pgo</exec_depend>
+  <exec_depend>livox_ros_driver2</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>pointcloud_to_laserscan</exec_depend>
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

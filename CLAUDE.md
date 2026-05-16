@@ -1,0 +1,332 @@
+# tanknav — ROS 2 Navigation for Mid360 + 履带底盘
+
+## 项目概述
+
+基于 ROS 2 Humble 的导航系统，驱动 154mm×267mm×276mm 履带底盘（串口通信控制），搭载 Mid360 激光雷达，实现已知地图导航。
+
+## 工作空间结构
+
+```
+tanknav/
+├── src/
+│   ├── tank_base/               # 底盘串口驱动 (Python)
+│   ├── tank_bringup/            # 启动编排 + 共享配置
+│   └── tank_nav2/               # Nav2 参数文件
+├── FASTLIO2_ROS2/
+│   ├── fastlio2/                # FAST-LIO2 LiDAR-惯性里程计 (C++)
+│   ├── localizer/               # ICP 定位器，已知地图重定位 (C++)
+│   ├── pgo/                     # 位姿图优化，建图回环检测 (C++)
+│   ├── hba/                     # 混合光束法平差 (未启用)
+│   └── interface/               # 自定义消息定义
+├── livox_ros_driver2/           # Mid360 官方驱动
+├── scripts/                     # 构建/运行快捷脚本
+│   ├── build_workspace.sh
+│   ├── source_workspace.sh
+│   ├── run_mapping.sh
+│   ├── run_localization.sh
+│   └── run_nav.sh
+└── CLAUDE.md
+```
+
+## 三种运行模式
+
+### 1. 建图模式 — `./scripts/run_mapping.sh`
+启动链: 底盘 → Mid360 → FAST-LIO2 → PGO (回环) → RViz
+- PGO 发布 `map→odom` TF，积累全局地图
+- 不启动 localizer 和 Nav2
+
+### 2. 纯定位模式 — `./scripts/run_localization.sh`
+启动链: 底盘 → Mid360 → FAST-LIO2 → localizer → RViz
+- localizer 基于 ICP 发布 `map→odom` TF
+- 用于验证已知地图上的重定位
+
+### 3. 导航模式 — `./scripts/run_nav.sh <map.yaml>`
+启动链: 底盘 → Mid360 → FAST-LIO2 → localizer → pointcloud_to_laserscan → map_server → Nav2
+- Nav2 延迟启动 (默认 8s，等待 FAST-LIO2 收敛)
+
+## TF 树 (导航模式)
+
+```
+map --[localizer/ICP]--> odom --[FAST-LIO2]--> base_link --[static]--> mid360_link
+```
+
+## 核心通信契约
+
+| Topic | 发布者 | 说明 |
+|-------|--------|------|
+| `/livox/lidar` | livox_ros_driver2 | Mid360 点云 |
+| `/livox/imu` | livox_ros_driver2 | Mid360 内建 IMU (FAST-LIO2 前端紧耦合) |
+| `/fastlio2/lio_odom` | FAST-LIO2 | 局部里程计 |
+| `/fastlio2/body_cloud` | FAST-LIO2 | body 系点云 → `/scan` 投影 → Nav2 costmap |
+| `/fastlio2/world_cloud` | FAST-LIO2 | 全局系点云 |
+| `/cmd_vel` | Nav2 | 速度指令 (下发至底盘) |
+| `/scan` | pointcloud_to_laserscan | 2D 激光扫描 (Nav2 障碍物层输入) |
+| `/base/feedback_odom` | tank_base | 底盘反馈速度 (仅供诊断，不注入 SLAM) |
+| `/base/raw_imu` | tank_base | 底盘 IMU (可选，不注入 SLAM) |
+| `/battery_state` | tank_base | 电池电压 |
+| `/base/motor_enabled` | tank_base | 电机使能状态 |
+
+## FAST-LIO2 配置要点
+
+文件: `src/tank_bringup/config/fastlio_mid360.yaml`
+
+- `world_frame: odom` — 作为 Nav2 期望的局部里程计坐标系
+- `body_frame: base_link` — 若 Mid360 安装位置偏离机器人中心较大，后续应改为 mid360_link 并加 frame adapter
+- `r_il` / `t_il` — LiDAR-IMU 外参 (Mid360 出厂已标定)
+- 点云滤波: `min_range: 0.5`, `max_range: 30.0`, `scan_resolution: 0.15`
+- 地图: `map_resolution: 0.3`, `cube_len: 300`
+
+## 软件架构
+
+### Layer A: 机器人模型 (未实现 `tank_description`)
+- 待创建: URDF/Xacro, base_footprint/base_link/mid360_link 定义, 传感器外参统一管理
+- 目前用 `robot.launch.py` 的 static_transform_publisher 替代
+
+### Layer B: 底盘驱动 — `tank_base`
+- `chassis_driver_node.py`: 串口通信，cmd_vel → 自定义串口协议，解析反馈帧
+- 串口协议: 帧头 0x7B, BCC 校验, 帧尾 0x7D
+- TX 11 字节 (vx/vy/wz ×1000, 单位 mm/s + mrad/s)
+- RX 24 字节 (速度反馈 + 加速度 + 角速度 + 电池电压)
+- `cmd_rate_hz: 20.0` — 控制指令发送频率
+- `feedback_rate_hz: 50.0` — 串口轮询频率
+- `cmd_timeout: 0.5s` — 超时未收到 cmd_vel 自动发零速
+- **关键约束**: 底盘反馈数据仅供诊断，不注入 FAST-LIO2
+
+### Layer C: 传感器 — Mid360
+- `livox_ros_driver2` 通过网口连接 Mid360
+- 需配置 `config/MID360_config.json` 中的 host_net_info (Jetson IP)
+
+### Layer D: SLAM/里程计 — FAST-LIO2 (C++)
+- 紧耦合 Mid360 点云 + 内建 IMU
+- iKd-Tree 维护局部地图
+- 发布 `odom→base_link`
+
+### Layer E: 导航感知
+- `pointcloud_to_laserscan`: `/fastlio2/body_cloud` → `/scan`
+- Nav2 costmap 2D 障碍物层消费 `/scan`
+
+### Layer F: 路径规划 — `tank_nav2`
+- 基于 Nav2: planner (NavFn), controller, BT Navigator
+- 参数文件: `config/nav2_params.yaml` (基线，需实物调参)
+
+## 已完成的工作
+
+- 所有软件包已接通: `tank_base`, `tank_bringup`, `tank_nav2`, `livox_ros_driver2`, `FASTLIO2_ROS2` (fastlio2, localizer, pgo, interface)
+- 编译命令和三种运行模式的启动脚本已就绪并验证语法
+- 工作空间可被 colcon 正常识别
+- 清理项:
+  - Python `__pycache__` 目录
+  - `log/`
+  - Livox ROS1 launch 文件 (`livox_ros_driver2/launch_ROS1`)
+  - 冗余的 `package_ROS1.xml` / `package_ROS2.xml`
+  - 备份源文件 `FASTLIO2_ROS2/hba/src/hba_node copy.cpp`
+- 保留项:
+  - `.vscode/`
+  - 第三方代码中的嵌套 `.git/` 目录
+  - `FASTLIO2_ROS2/hba` (完整保留，后续地图精化可能用到)
+
+## 未完成 (实物验证前必填)
+
+### 网络配置
+- `livox_ros_driver2/config/MID360_config.json`:
+  - `host_net_info` — Jetson 网口 IP (当前默认 192.168.1.5，需替换)
+  - `lidar_configs[0].ip` — Mid360 设备 IP (默认 192.168.1.12)
+
+### 串口配置
+- `src/tank_base/config/serial.yaml`:
+  - `port` — 底盘串口设备路径 (当前 `/dev/ttyUSB0`，需替换)
+
+### 外参配置
+- `src/tank_bringup/launch/robot.launch.py`:
+  - `mid360_x/y/z/yaw/pitch/roll` — 按实物安装位置标定
+
+### 导航参数
+- `src/tank_nav2/config/nav2_params.yaml`:
+  - 机器人半径、速度/加速度限制、避障参数需真机调参
+
+### 整机联调
+- 尚未做 Jetson + Mid360 + 底盘的端到端联调
+
+## 推荐执行顺序
+
+### Step 1: 编译
+```bash
+./scripts/build_workspace.sh
+# 等价于:
+# source /opt/ros/humble/setup.bash
+# colcon build --symlink-install \
+#   --base-paths src FASTLIO2_ROS2 livox_ros_driver2
+```
+
+### Step 2: 配置网络
+编辑 `livox_ros_driver2/config/MID360_config.json`:
+- 将 `host_net_info` 中的 IP 改为 Jetson 网口实际 IP
+- 确认 `lidar_configs[0].ip` 与 Mid360 设备 IP 一致
+
+### Step 3: 配置串口
+编辑 `src/tank_base/config/serial.yaml`:
+- 确认 `port` 为真实设备路径 (`/dev/ttyUSB0` 或 `/dev/ttyACM0`)
+
+### Step 4: 运行对应模式
+```bash
+source ./scripts/source_workspace.sh
+
+# 建图
+./scripts/run_mapping.sh
+
+# 纯定位测试
+./scripts/run_localization.sh
+
+# 导航 (需已有地图)
+./scripts/run_nav.sh /绝对路径/地图.yaml
+```
+
+## 下一步（PC 端联调顺序）
+
+### 1. 配通 Mid360 网络
+```bash
+# 查看本机网口 IP
+ip a
+# 编辑 livox_ros_driver2/config/MID360_config.json
+# host_net_info → 本机网口 IP（必须和雷达在同一网段，默认 192.168.1.xxx）
+# lidar_configs[0].ip → 雷达 IP（默认 192.168.1.12）
+```
+
+### 2. 建图
+```bash
+./scripts/run_mapping.sh
+```
+RViz 中能看到实时点云和 FAST-LIO2 在建图即表示通路正常。
+
+### 3. 保存地图
+建图完成后用 PGO 的保存地图服务，或用 map_saver_cli：
+```bash
+ros2 run nav2_map_server map_saver_cli -f ~/maps/my_map
+```
+
+### 4. 导航
+```bash
+./scripts/run_nav.sh ~/maps/my_map.yaml
+```
+
+## 迁移到 Jetson NX
+
+### 整体原则
+
+代码本身不需要改动，在 NX 上重新编译即可（aarch64 不能复用 x86_64 的 install/）。
+
+### NX 环境准备
+
+```bash
+# ROS2 Humble
+sudo apt install ros-humble-desktop
+
+# Livox-SDK2（需源码编译）
+#   git clone https://github.com/Livox-SDK/Livox-SDK2.git
+#   cd Livox-SDK2 && mkdir build && cd build
+#   cmake .. && sudo make install
+
+# 编译依赖
+sudo apt install libgtsam-dev libpcl-dev libsophus-dev
+sudo apt install ros-humble-nav2-*
+sudo apt install ros-humble-pointcloud-to-laserscan
+```
+
+### 代码部署
+
+```bash
+# scp 拷贝到 NX
+scp -r ~/tanknav nx@<nx-ip>:~/
+
+# 编译
+cd ~/tanknav
+./scripts/build_workspace.sh
+```
+
+### NX 实物配置
+
+与 PC 端完全一致，每项必填：
+
+| 配置项 | 文件 | 说明 |
+|--------|------|------|
+| NX 网口 IP | `livox_ros_driver2/config/MID360_config.json` `host_net_info` | 与雷达同网段 |
+| 雷达 IP | 同上 `lidar_configs[0].ip` | 一般默认即可 |
+| 底盘串口 | `src/tank_base/config/serial.yaml` `port` | `/dev/ttyACM0` 等 |
+| Mid360 外参 | `src/tank_bringup/launch/robot.launch.py` | x/y/z/yaw/pitch/roll |
+
+### NX 部署注意事项
+
+- FAST-LIO2 在 NX 上约占用 30-40% CPU
+- 建议关闭 RViz 节省资源（建图时可以在 PC 端远程看）
+- 建图时注意点云地图大小，`cube_len: 300` 约占用数百 MB 内存
+- `tank_nav2/config/nav2_params.yaml` 需要按 NX 算力情况调整 costmap 更新频率
+
+## 远程 RViz 查看
+
+在 PC 端通过 RViz 查看 NX 上正在运行的机器人状态。
+
+### 方法一：ROS 2 默认 DDS 跨机器通信（推荐）
+
+**前提**: NX 和 PC 在同一个局域网。
+
+```bash
+# NX 上启动机器人（任意模式）
+cd ~/tanknav
+source ./scripts/source_workspace.sh
+# 确保不启动本机 RViz
+ros2 launch tank_bringup bringup_localization.launch.py
+
+# PC 上启动 RViz
+source /opt/ros/humble/setup.bash
+ros2 run rviz2 rviz2
+```
+
+在 RViz 界面中添加显示：
+1. `Add` → `By topic` → `/fastlio2/world_cloud` (PointCloud2)
+2. `Add` → `TF`
+3. `Global Options` → `Fixed Frame` 设为 `map`
+
+**如果看不到 topic**，检查网络：
+```bash
+# 两边分别确认 ROS_DOMAIN_ID 一致（不设置则都是默认值，会通）
+echo $ROS_DOMAIN_ID
+
+# 或者指定相同的 ID
+export ROS_DOMAIN_ID=42
+# 两边都要设
+
+# 测试是否能互相发现
+# PC 端执行:
+ros2 topic list
+# 应该能看到 NX 上发布的 topic
+```
+
+也可以只拉取特定 topic，减少网络带宽：
+```bash
+# PC 端只拉取 /fastlio2/world_cloud
+ros2 run rviz2 rviz2 --args -o /fastlio2/world_cloud
+```
+
+### 方法二：SSH 隧道（跨网段时使用）
+
+当 NX 和 PC 不在同一个局域网时（如 NX 通过 4G 上网）：
+
+```bash
+# NX 端安装 ros2 bag 记录并传输，或使用 zenoh/mqtt 桥接
+# 最简方案：NX 上录包，PC 上回放
+# NX:
+ros2 bag record -o robot_bag /fastlio2/world_cloud /fastlio2/lio_odom /scan /tf /tf_static
+# PC:
+ros2 bag play robot_bag
+rviz2
+```
+
+## 注意事项
+
+- 底盘为**履带**驱动，差速转向模型
+- FAST-LIO2 将 `body_frame` 设为 `base_link`，若 Mid360 安装偏移大，后续应改为 `odom→mid360_link` + `mid360_link→base_link` 静态 TF
+- localizer 与 PGO **不可同时运行** (都发布 `map→odom` 会冲突)
+- `tank_base` 的底盘 IMU/轮速里程计**仅用于诊断**，不注入 FAST-LIO2
+- HBA 包在工作空间内但未接入默认启动流
+- Nav2 参数 `nav2_params.yaml` 为初始模板，需实物标定
+- 依赖: gtsam, PCL, Sophus, Livox-SDK2, Nav2, pointcloud_to_laserscan
