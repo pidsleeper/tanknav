@@ -24,7 +24,9 @@ tanknav/
 │   ├── source_workspace.sh
 │   ├── run_mapping.sh
 │   ├── run_localization.sh
-│   └── run_nav.sh
+│   ├── run_nav.sh
+│   └── teleop_key.py            # 键盘遥控调试
+├── README.md
 └── CLAUDE.md
 ```
 
@@ -120,21 +122,29 @@ map --[localizer/ICP]--> odom --[FAST-LIO2]--> base_link --[static]--> mid360_li
   - Livox ROS1 launch 文件 (`livox_ros_driver2/launch_ROS1`)
   - 冗余的 `package_ROS1.xml` / `package_ROS2.xml`
   - 备份源文件 `FASTLIO2_ROS2/hba/src/hba_node copy.cpp`
+  - 嵌套的第三方 `.git/` 目录 (FASTLIO2_ROS2, livox_ros_driver2)
 - 保留项:
   - `.vscode/`
-  - 第三方代码中的嵌套 `.git/` 目录
   - `FASTLIO2_ROS2/hba` (完整保留，后续地图精化可能用到)
 
+### PC 端验证完成
+
+- 底盘串口通信：已通过 `/dev/ttyACM0` 收发正常，`ros2 topic pub /cmd_vel` 手动测试底盘响应正常
+- 键盘遥控：`scripts/teleop_key.py` 实现 W/A/S/D/Q/E 控制，Space 急停，+/- 调速
+- Mid360 雷达：网络连通 (PC 网口 `enp5s0: 192.168.1.50`)，雷达实际 IP 为 `192.168.1.152`
+- Mid360 驱动：`livox_ros_driver2` 已验证收发 `/livox/imu` 和 `/livox/lidar` 数据正常
+- 编译脚本修复：`set -euo pipefail` → `set -eo pipefail` (ROS humble `setup.bash` 存在未绑定变量)
+- 构建通过：PC (x86_64) 上全部 9 个包编译成功
+- RViz 配置：创建 `src/tank_bringup/rviz/mapping.rviz`，Fixed Frame 设为 `odom`
+- 代码已推送至 GitHub: `https://github.com/pidsleeper/tanknav.git`
+
+### livox_ros_driver2 适配补丁
+
+- `CMakeLists.txt`: `DISTRO_ROS` → `$ENV{ROS_DISTRO}` (兼容 humble)
+- `src/comm/pub_handler.cpp`: 移除 `kLivoxLidarTypeMid360s` 引用 (当前 Livox-SDK2 未包含此枚举)
+- `.gitignore`: 移除 `package.xml` (防止 git 忽略导致 NX 编译失败)
+
 ## 未完成 (实物验证前必填)
-
-### 网络配置
-- `livox_ros_driver2/config/MID360_config.json`:
-  - `host_net_info` — Jetson 网口 IP (当前默认 192.168.1.5，需替换)
-  - `lidar_configs[0].ip` — Mid360 设备 IP (默认 192.168.1.12)
-
-### 串口配置
-- `src/tank_base/config/serial.yaml`:
-  - `port` — 底盘串口设备路径 (当前 `/dev/ttyUSB0`，需替换)
 
 ### 外参配置
 - `src/tank_bringup/launch/robot.launch.py`:
@@ -143,9 +153,28 @@ map --[localizer/ICP]--> odom --[FAST-LIO2]--> base_link --[static]--> mid360_li
 ### 导航参数
 - `src/tank_nav2/config/nav2_params.yaml`:
   - 机器人半径、速度/加速度限制、避障参数需真机调参
+  - 按 NX 算力调整 costmap 更新频率
+
+### NX 部署 (进行中)
+
+NX: `aewsw@jetson` (aarch64, Ubuntu 22.04, ROS2 Humble)
+
+| 项目 | 状态 |
+|------|------|
+| ROS2 Humble | 已装 |
+| Livox-SDK2 | 已装 (源码编译) |
+| PCL | 已装 (apt) |
+| GTSAM | 已装 (apt) |
+| Sophus | 已装 (v1.22.10，源码编译) |
+| Mid360 网口 | 已配 (Netplan 静态 IP `enx00e04c68012a: 192.168.1.50/24`) |
+| Mid360 通信 | 已验证 — `/livox/lidar` 和 `/livox/imu` 数据正常 |
+| 底盘串口 | `/dev/ttyACM0` 已确认 |
+| Nav2 / pointcloud_to_laserscan | 已装 |
+| 工作空间编译 | 已完成 (colcon build 全部通过) |
 
 ### 整机联调
-- 尚未做 Jetson + Mid360 + 底盘的端到端联调
+- ✅ NX 上跑通建图模式（底盘 + Mid360 + FAST-LIO2 + PGO）
+- 待做: 纯定位模式、导航模式验证
 
 ## 推荐执行顺序
 
@@ -218,24 +247,49 @@ ros2 run nav2_map_server map_saver_cli -f ~/maps/my_map
 ### NX 环境准备
 
 ```bash
-# ROS2 Humble
+# ROS2 Humble + Nav2
 sudo apt install ros-humble-desktop
-
-# Livox-SDK2（需源码编译）
-#   git clone https://github.com/Livox-SDK/Livox-SDK2.git
-#   cd Livox-SDK2 && mkdir build && cd build
-#   cmake .. && sudo make install
-
-# 编译依赖
-sudo apt install libgtsam-dev libpcl-dev libsophus-dev
 sudo apt install ros-humble-nav2-*
 sudo apt install ros-humble-pointcloud-to-laserscan
+
+# Livox-SDK2（源码编译）
+git clone https://github.com/Livox-SDK/Livox-SDK2.git
+cd Livox-SDK2 && mkdir build && cd build
+cmake .. && sudo make install
+
+# 编译依赖
+sudo apt install libgtsam-dev libpcl-dev
+
+# Sophus（NX CMake 3.22 不支持最新版，需 v1.22.10）
+git clone https://github.com/strasdat/Sophus.git
+cd Sophus && git checkout v1.22.10
+mkdir build && cd build
+cmake .. && make -j4 && sudo make install
+```
+
+### 注意：Conda 环境冲突
+
+NX 如果装了 Conda (miniforge3)，`python3` 可能指向 Conda 而非系统 `/usr/bin/python3`，会导致 ROS 编译失败 (`ModuleNotFoundError: No module named 'catkin_pkg'`)。
+
+处理方式：
+```bash
+# 退出 conda base 环境后编译
+conda deactivate
+./scripts/build_workspace.sh
+
+# 或删除 build/install 后指定系统 Python 编译
+rm -rf build/ install/
+colcon build --symlink-install \
+  --base-paths src FASTLIO2_ROS2 livox_ros_driver2
 ```
 
 ### 代码部署
 
 ```bash
-# scp 拷贝到 NX
+# git clone（推荐）
+git clone https://github.com/pidsleeper/tanknav.git ~/tanknav
+
+# 或 scp
 scp -r ~/tanknav nx@<nx-ip>:~/
 
 # 编译
@@ -245,21 +299,20 @@ cd ~/tanknav
 
 ### NX 实物配置
 
-与 PC 端完全一致，每项必填：
-
 | 配置项 | 文件 | 说明 |
 |--------|------|------|
-| NX 网口 IP | `livox_ros_driver2/config/MID360_config.json` `host_net_info` | 与雷达同网段 |
-| 雷达 IP | 同上 `lidar_configs[0].ip` | 一般默认即可 |
-| 底盘串口 | `src/tank_base/config/serial.yaml` `port` | `/dev/ttyACM0` 等 |
+| NX 网口 IP | `livox_ros_driver2/config/MID360_config.json` `host_net_info` | `192.168.1.50` 等 |
+| 雷达 IP | 同上 `lidar_configs[0].ip` | NX 环境雷达 IP `192.168.1.152` |
+| 底盘串口 | `src/tank_base/config/serial.yaml` `port` | `/dev/ttyACM0` |
 | Mid360 外参 | `src/tank_bringup/launch/robot.launch.py` | x/y/z/yaw/pitch/roll |
 
 ### NX 部署注意事项
 
 - FAST-LIO2 在 NX 上约占用 30-40% CPU
-- 建议关闭 RViz 节省资源（建图时可以在 PC 端远程看）
+- 建议关闭 RViz 节省资源（建图时可以在 PC 端远程看 RViz）
 - 建图时注意点云地图大小，`cube_len: 300` 约占用数百 MB 内存
 - `tank_nav2/config/nav2_params.yaml` 需要按 NX 算力情况调整 costmap 更新频率
+- NX 网口接 Mid360：`enx00e04c68012a` (USB 网卡)，WiFi 口 `wlP1p1s0` 接互联网
 
 ## 远程 RViz 查看
 
