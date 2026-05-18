@@ -23,7 +23,7 @@ def generate_launch_description():
         package="rviz2",
         executable="rviz2",
         name="rviz2_mapping",
-        arguments=["-d", PathJoinSubstitution([FindPackageShare("fastlio2"), "rviz", "fastlio2.rviz"])],
+        arguments=["-d", PathJoinSubstitution([FindPackageShare("tank_bringup"), "rviz", "mapping.rviz"])],
         condition=IfCondition(use_rviz),
         output="screen",
     )
