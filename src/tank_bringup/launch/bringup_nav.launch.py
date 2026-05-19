@@ -36,6 +36,11 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("map", default_value=""),
             DeclareLaunchArgument(
+                "pcd_map",
+                default_value="",
+                description="Path to PCD map for localizer relocalization",
+            ),
+            DeclareLaunchArgument(
                 "nav2_params",
                 default_value=PathJoinSubstitution(
                     [FindPackageShare("tank_nav2"), "config", "nav2_params.yaml"]
@@ -82,6 +87,7 @@ def generate_launch_description():
                 ),
                 launch_arguments={
                     "map": LaunchConfiguration("map"),
+                    "pcd_map": LaunchConfiguration("pcd_map"),
                     "nav2_params": LaunchConfiguration("nav2_params"),
                     "nav2_start_delay": LaunchConfiguration("nav2_start_delay"),
                 }.items(),

@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo, OpaqueFunction, TimerAction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo, OpaqueFunction, TimerAction, ExecuteProcess
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
@@ -9,6 +9,7 @@ from launch_ros.substitutions import FindPackageShare
 def launch_setup(context, *args, **kwargs):
     actions = []
     map_yaml = LaunchConfiguration("map").perform(context)
+    pcd_map = LaunchConfiguration("pcd_map").perform(context)
     params_file = LaunchConfiguration("nav2_params").perform(context)
     nav2_start_delay = float(LaunchConfiguration("nav2_start_delay").perform(context))
 
@@ -78,6 +79,36 @@ def launch_setup(context, *args, **kwargs):
     )
 
     actions.append(TimerAction(period=nav2_start_delay, actions=[nav2_navigation]))
+
+    # Auto-relocalize: load PCD map into localizer 5s after startup
+    if pcd_map:
+        actions.append(
+            TimerAction(
+                period=5.0,
+                actions=[
+                    ExecuteProcess(
+                        cmd=[
+                            "ros2", "service", "call",
+                            "/localizer/relocalize",
+                            "interface/srv/Relocalize",
+                            f"{{pcd_path: '{pcd_map}', x: 0.0, y: 0.0, z: 0.0, yaw: 0.0, pitch: 0.0, roll: 0.0}}",
+                        ],
+                        output="screen",
+                    )
+                ],
+            )
+        )
+
+        actions.append(
+            Node(
+                package="tank_bringup",
+                executable="initialpose_bridge.py",
+                name="initialpose_bridge",
+                output="screen",
+                parameters=[{"pcd_path": pcd_map}],
+            )
+        )
+
     return actions
 
 
@@ -85,6 +116,11 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("map", default_value=""),
+            DeclareLaunchArgument(
+                "pcd_map",
+                default_value="",
+                description="Path to PCD map for localizer relocalization (auto-loaded)",
+            ),
             DeclareLaunchArgument(
                 "nav2_params",
                 default_value=PathJoinSubstitution(
