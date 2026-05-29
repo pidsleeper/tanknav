@@ -29,6 +29,7 @@ struct NodeConfig
     std::string body_frame = "body";
     std::string world_frame = "lidar";
     bool print_time_cost = false;
+    bool publish_system_time = true;
 };
 struct StateData
 {
@@ -87,6 +88,8 @@ public:
         m_node_config.body_frame = config["body_frame"].as<std::string>();
         m_node_config.world_frame = config["world_frame"].as<std::string>();
         m_node_config.print_time_cost = config["print_time_cost"].as<bool>();
+        if (config["publish_system_time"])
+            m_node_config.publish_system_time = config["publish_system_time"].as<bool>();
 
         m_builder_config.lidar_filter_num = config["lidar_filter_num"].as<int>();
         m_builder_config.lidar_min_range = config["lidar_min_range"].as<double>();
@@ -168,24 +171,24 @@ public:
         return true;
     }
 
-    void publishCloud(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub, CloudType::Ptr cloud, std::string frame_id, const double &time)
+    void publishCloud(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub, CloudType::Ptr cloud, std::string frame_id, const builtin_interfaces::msg::Time &stamp)
     {
         if (pub->get_subscription_count() <= 0)
             return;
         sensor_msgs::msg::PointCloud2 cloud_msg;
         pcl::toROSMsg(*cloud, cloud_msg);
         cloud_msg.header.frame_id = frame_id;
-        cloud_msg.header.stamp = Utils::getTime(time);
+        cloud_msg.header.stamp = stamp;
         pub->publish(cloud_msg);
     }
 
-    void publishOdometry(rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub, std::string frame_id, std::string child_frame, const double &time)
+    void publishOdometry(rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub, std::string frame_id, std::string child_frame, const builtin_interfaces::msg::Time &stamp)
     {
         if (odom_pub->get_subscription_count() <= 0)
             return;
         nav_msgs::msg::Odometry odom;
         odom.header.frame_id = frame_id;
-        odom.header.stamp = Utils::getTime(time);
+        odom.header.stamp = stamp;
         odom.child_frame_id = child_frame;
         odom.pose.pose.position.x = m_kf->x().t_wi.x();
         odom.pose.pose.position.y = m_kf->x().t_wi.y();
@@ -203,13 +206,13 @@ public:
         odom_pub->publish(odom);
     }
 
-    void publishPath(rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub, std::string frame_id, const double &time)
+    void publishPath(rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr path_pub, std::string frame_id, const builtin_interfaces::msg::Time &stamp)
     {
         if (path_pub->get_subscription_count() <= 0)
             return;
         geometry_msgs::msg::PoseStamped pose;
         pose.header.frame_id = frame_id;
-        pose.header.stamp = Utils::getTime(time);
+        pose.header.stamp = stamp;
         pose.pose.position.x = m_kf->x().t_wi.x();
         pose.pose.position.y = m_kf->x().t_wi.y();
         pose.pose.position.z = m_kf->x().t_wi.z();
@@ -222,12 +225,12 @@ public:
         path_pub->publish(m_state_data.path);
     }
 
-    void broadCastTF(std::shared_ptr<tf2_ros::TransformBroadcaster> broad_caster, std::string frame_id, std::string child_frame, const double &time)
+    void broadCastTF(std::shared_ptr<tf2_ros::TransformBroadcaster> broad_caster, std::string frame_id, std::string child_frame, const builtin_interfaces::msg::Time &stamp)
     {
         geometry_msgs::msg::TransformStamped transformStamped;
         transformStamped.header.frame_id = frame_id;
         transformStamped.child_frame_id = child_frame;
-        transformStamped.header.stamp = Utils::getTime(time);
+        transformStamped.header.stamp = stamp;
         Eigen::Quaterniond q(m_kf->x().r_wi);
         V3D t = m_kf->x().t_wi;
         transformStamped.transform.translation.x = t.x();
@@ -257,19 +260,22 @@ public:
         if (m_builder->status() != BuilderStatus::MAPPING)
             return;
 
-        broadCastTF(m_tf_broadcaster, m_node_config.world_frame, m_node_config.body_frame, m_package.cloud_end_time);
+        double output_time = m_node_config.publish_system_time ? this->now().seconds() : m_package.cloud_end_time;
+        builtin_interfaces::msg::Time output_stamp = Utils::getTime(output_time);
 
-        publishOdometry(m_odom_pub, m_node_config.world_frame, m_node_config.body_frame, m_package.cloud_end_time);
+        broadCastTF(m_tf_broadcaster, m_node_config.world_frame, m_node_config.body_frame, output_stamp);
+
+        publishOdometry(m_odom_pub, m_node_config.world_frame, m_node_config.body_frame, output_stamp);
 
         CloudType::Ptr body_cloud = m_builder->lidar_processor()->transformCloud(m_package.cloud, m_kf->x().r_il, m_kf->x().t_il);
 
-        publishCloud(m_body_cloud_pub, body_cloud, m_node_config.body_frame, m_package.cloud_end_time);
+        publishCloud(m_body_cloud_pub, body_cloud, m_node_config.body_frame, output_stamp);
 
         CloudType::Ptr world_cloud = m_builder->lidar_processor()->transformCloud(m_package.cloud, m_builder->lidar_processor()->r_wl(), m_builder->lidar_processor()->t_wl());
 
-        publishCloud(m_world_cloud_pub, world_cloud, m_node_config.world_frame, m_package.cloud_end_time);
+        publishCloud(m_world_cloud_pub, world_cloud, m_node_config.world_frame, output_stamp);
 
-        publishPath(m_path_pub, m_node_config.world_frame, m_package.cloud_end_time);
+        publishPath(m_path_pub, m_node_config.world_frame, output_stamp);
     }
 
 private:

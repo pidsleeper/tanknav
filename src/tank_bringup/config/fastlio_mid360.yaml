@@ -11,6 +11,7 @@ lidar_topic: /livox/lidar
 body_frame: base_link
 world_frame: odom
 print_time_cost: false
+publish_system_time: true
 
 lidar_filter_num: 6
 lidar_min_range: 0.5

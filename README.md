@@ -56,4 +56,11 @@ ros2 launch tank_bringup base.launch.py
 python3 scripts/teleop_key.py --linear 0.1
 ```
 
+conda deactivate
+cd ~/tanknav
+source ./scripts/source_workspace.sh
+
+./scripts/run_nav.sh ~/maps/my_map.yaml
+rviz2 -d ~/tanknav/src/tank_bringup/rviz/navigation.rviz
+
 详情见 [CLAUDE.md](CLAUDE.md)。
