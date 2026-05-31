@@ -25,7 +25,8 @@ tanknav/
 │   ├── run_mapping.sh
 │   ├── run_localization.sh
 │   ├── run_nav.sh
-│   └── teleop_key.py            # 键盘遥控调试
+│   ├── teleop_key.py            # 键盘遥控调试
+│   └── pcd_to_navmap.py         # PCD 点云 → 2D 栅格地图转换
 ├── README.md
 └── CLAUDE.md
 ```
@@ -74,9 +75,17 @@ map --[localizer/ICP]--> odom --[FAST-LIO2]--> base_link --[static]--> mid360_li
 
 - `world_frame: odom` — 作为 Nav2 期望的局部里程计坐标系
 - `body_frame: base_link` — 若 Mid360 安装位置偏离机器人中心较大，后续应改为 mid360_link 并加 frame adapter
+- `publish_system_time: true` — **关键参数**，输出层用系统时间替换 LiDAR 硬件时间，解决 LiDAR 时钟漂移导致的 TF 查询失败
+- `imu_topic: /livox/imu` / `lidar_topic: /livox/lidar` — 必须用原始话题，不改时间戳（紧耦合同步不受影响）
 - `r_il` / `t_il` — LiDAR-IMU 外参 (Mid360 出厂已标定)
 - 点云滤波: `min_range: 0.5`, `max_range: 30.0`, `scan_resolution: 0.15`
 - 地图: `map_resolution: 0.3`, `cube_len: 300`
+
+### LiDAR 时钟漂移问题
+
+Mid360 硬件晶振与 NX 系统晶振频率偏差约 0.001%，长时间运行后 LiDAR 时间戳与系统时间差可达几十秒。Nav2 costmap 用 scan 时间戳查询 TF 时，TF buffer 只保留 10 秒，导致 Extrapolation Error，障碍物无法投影。
+
+**解决方案**：修改 `lio_node.cpp`，加 `publish_system_time` 参数。LiDAR/IMU 原样输入紧耦合同步，但 TF、body_cloud、odom、path 发布时间戳用 `this->now()` 切为系统时间。下游全线统一系统时钟域。
 
 ## 软件架构
 
@@ -104,8 +113,21 @@ map --[localizer/ICP]--> odom --[FAST-LIO2]--> base_link --[static]--> mid360_li
 - 发布 `odom→base_link`
 
 ### Layer E: 导航感知
-- `pointcloud_to_laserscan`: `/fastlio2/body_cloud` → `/scan`
-- Nav2 costmap 2D 障碍物层消费 `/scan`
+
+动态避障采用 **双源 VoxelLayer** 直接消费 3D 点云 + 2D 激光清除：
+
+```
+/fastlio2/body_cloud (PointCloud2) ──→ VoxelLayer [标记障碍物]
+/scan (LaserScan)                  ──→ VoxelLayer [清除射线，消除动态影子]
+                                       ↓
+                              /local_costmap/costmap (2D 栅格)
+                                       ↓
+                              DWB Local Planner → /cmd_vel
+```
+
+- `pointcloud_to_laserscan`: `/fastlio2/body_cloud` → `/scan`（2D 投影，供清除射线用）
+- VoxelLayer 直接订阅 `/fastlio2/body_cloud`（PointCloud2），绕过 LaserScan 的 BEST_EFFORT QoS 兼容问题
+- `/scan` 仅用于清除（`marking: false`），360° 规则射线能穿透旧障碍物位置清除残留标记
 
 ### Layer F: 路径规划 — `tank_nav2`
 - 基于 Nav2: planner (NavFn), controller, BT Navigator
@@ -155,7 +177,7 @@ map --[localizer/ICP]--> odom --[FAST-LIO2]--> base_link --[static]--> mid360_li
   - 机器人半径、速度/加速度限制、避障参数需真机调参
   - 按 NX 算力调整 costmap 更新频率
 
-### NX 部署 (进行中)
+### NX 部署 (已完成)
 
 NX: `aewsw@jetson` (aarch64, Ubuntu 22.04, ROS2 Humble)
 
@@ -168,13 +190,14 @@ NX: `aewsw@jetson` (aarch64, Ubuntu 22.04, ROS2 Humble)
 | Sophus | 已装 (v1.22.10，源码编译) |
 | Mid360 网口 | 已配 (Netplan 静态 IP `enx00e04c68012a: 192.168.1.50/24`) |
 | Mid360 通信 | 已验证 — `/livox/lidar` 和 `/livox/imu` 数据正常 |
-| 底盘串口 | `/dev/ttyACM0` 已确认 |
+| 底盘串口 | `/dev/ttyACM0` 已确认，需 `sudo chmod 666` 或加入 dialout 组 |
 | Nav2 / pointcloud_to_laserscan | 已装 |
 | 工作空间编译 | 已完成 (colcon build 全部通过) |
 
 ### 整机联调
 - ✅ NX 上跑通建图模式（底盘 + Mid360 + FAST-LIO2 + PGO）
-- 待做: 纯定位模式、导航模式验证
+- ✅ 导航模式验证通过（定位 + 路径规划 + 动态避障）
+- ✅ 动态避障：VoxelLayer 双源方案（body_cloud 标记 + scan 清除）
 
 ## 推荐执行顺序
 
@@ -381,5 +404,31 @@ rviz2
 - localizer 与 PGO **不可同时运行** (都发布 `map→odom` 会冲突)
 - `tank_base` 的底盘 IMU/轮速里程计**仅用于诊断**，不注入 FAST-LIO2
 - HBA 包在工作空间内但未接入默认启动流
-- Nav2 参数 `nav2_params.yaml` 为初始模板，需实物标定
 - 依赖: gtsam, PCL, Sophus, Livox-SDK2, Nav2, pointcloud_to_laserscan
+
+### 导航参数调优要点
+
+局部避障已通过 VoxelLayer 双源方案解决。当前 `nav2_params.yaml` 关键参数：
+
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| `publish_system_time` | true | FAST-LIO2 输出切系统时间 |
+| `local_costmap.plugins` | [voxel_layer, inflation_layer] | VoxelLayer 替代 obstacle_layer |
+| `observation_sources` | body_cloud + scan | PointCloud2 标记 + LaserScan 清除 |
+| `body_cloud.obstacle_max_range` | 6.0 | 6m 内标记障碍物 |
+| `scan.raytrace_max_range` | 12.0 | 12m 射线覆盖清除 |
+| `scan.marking` | false | /scan 只清除不标记 |
+| `robot_radius` | 0.2 | 匹配 154×267mm 底盘 |
+| `inflation_radius` | 0.45 | 障碍物膨胀区 |
+| `max_vel_x` / `max_vel_theta` | 0.3 / 0.8 | 安全速度 |
+
+### 保存地图流程
+
+建图完成后：
+```bash
+# 1. 保存 PCD 点云地图（给 localizer 定位用）
+ros2 service call /pgo/save_maps interface/srv/SaveMaps "{file_path: '/home/aewsw/maps/', save_patches: false}"
+
+# 2. 转换 2D 栅格地图（给 Nav2 导航用）
+python3 ~/tanknav/scripts/pcd_to_navmap.py ~/maps/map.pcd my_map
+```
