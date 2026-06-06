@@ -12,4 +12,9 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(PROGRAMS
+  scripts/initialpose_bridge.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ament_package()

@@ -18,5 +18,6 @@ ros2 launch tank_bringup bringup_nav.launch.py \
   livox_config:="${WORKSPACE_ROOT}/livox_ros_driver2/config/MID360_config.json" \
   fastlio_config:="${WORKSPACE_ROOT}/src/tank_bringup/config/fastlio_mid360.yaml" \
   localizer_config:="${WORKSPACE_ROOT}/src/tank_bringup/config/localizer_mid360.yaml" \
+  pcd_map:="${HOME}/maps/map.pcd" \
   nav2_params:="${WORKSPACE_ROOT}/src/tank_nav2/config/nav2_params.yaml" \
   nav2_start_delay:=8.0
