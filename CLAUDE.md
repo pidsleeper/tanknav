@@ -490,3 +490,51 @@ map --[localizer/ICP]--> odom --[FAST-LIO2]--> base_link --[static]--> mid360_li
 文件: `src/tank_bringup/config/fastlio_mid360.yaml`
 - `world_frame: odom` — 直接使用 Nav2 标准 frame
 - `body_frame: base_link` — 直接使用 Nav2 标准 frame
+
+---
+
+## Jetson 实车验证 (人工 QA)
+
+以下步骤需在 Jetson NX 上按顺序执行。前提条件：
+- `fast_livo_ws` 已编译 (`colcon build --symlink-install`)
+- D435i 已连接 (USB 3.0) 且 realsense2_camera 包可用
+- Mid360 网络连通 (Netplan 静态 IP)
+- 底盘串口 `/dev/ttyACM0` 可用
+
+### Step 1: 编译
+```bash
+./scripts/build_fastlivo.sh
+```
+
+### Step 2: 建图验证
+```bash
+./scripts/run_mapping_fastlivo.sh
+```
+**预期现象**:
+- RViz 中看到 `/cloud_registered` 彩色点云 + `/Laser_map` 增量地图
+- `/path` 实时轨迹线
+- PGO 回环检测日志: `[PGO] loop detected`
+- 建图完成后 pcd_save 路径 (默认 `~/fast_livo_ws/src/FAST-LIVO2/PCD/`) 存在 .pcd 文件
+
+### Step 3: 纯定位验证
+```bash
+./scripts/run_localization_fastlivo.sh
+```
+**预期现象**:
+- FAST-LIVO2 里程计正常 (RViz TF: odom→base_link 跟随运动)
+- 通过 `/localizer/relocalize` 服务加载 PCD 先验地图:
+  ```bash
+  ros2 service call /localizer/relocalize interface/srv/Relocalize "{pcd_path: '/path/to/map.pcd'}"
+  ```
+- TF 中出现 map→odom (localizer ICP 收敛后)
+
+### Step 4: 导航验证
+```bash
+./scripts/run_nav_fastlivo.sh /path/to/map.yaml
+```
+**预期现象**:
+- Nav2 8s 延迟后自动启动
+- RViz 中 `2D Goal Pose` 可下发
+- `/cmd_vel` 有非零速度输出
+- 底盘响应导航指令运动
+- costmap 有实时障碍物层 (来自 `/cloud_body` / `/scan`)
