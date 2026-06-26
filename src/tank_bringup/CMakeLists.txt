@@ -12,6 +12,11 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(DIRECTORY
+  tank_bringup
+  DESTINATION lib/python3.10/site-packages
+)
+
 install(PROGRAMS
   scripts/initialpose_bridge.py
   DESTINATION lib/${PROJECT_NAME}
