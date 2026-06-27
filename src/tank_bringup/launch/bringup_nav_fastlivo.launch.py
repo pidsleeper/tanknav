@@ -26,7 +26,7 @@ def nav_setup(context, *args, **kwargs):
         return actions
 
     nav2_share = get_package_share_directory("tank_nav2")
-    params_file = os.path.join(nav2_share, "config", "nav2_params.yaml")
+    params_file = os.path.join(nav2_share, "config", "nav2_params_fastlivo.yaml")
 
     nav2_include = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
