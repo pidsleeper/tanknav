@@ -37,6 +37,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument("use_rviz", default_value="true"),
+        DeclareLaunchArgument("use_pgo", default_value="true"),
 
         # 1. 静态 TF: base_link → mid360_link, base_link → camera_link
         IncludeLaunchDescription(
@@ -110,13 +111,14 @@ def generate_launch_description():
             }],
         ),
 
-        # 8. PGO 回环建图 (基于 /cloud_body + /odom 发布 map→odom TF + 回环检测)
+        # 8. PGO
         Node(
             package="pgo",
             executable="pgo_node",
             name="pgo",
             output="screen",
             parameters=[{"config_path": pgo_config}],
+            condition=IfCondition(LaunchConfiguration("use_pgo")),
         ),
 
         # 9. RViz
