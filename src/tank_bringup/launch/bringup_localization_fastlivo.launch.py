@@ -110,7 +110,7 @@ def generate_launch_description():
             executable="localizer_node",
             name="localizer_node",
             output="screen",
-            parameters=[localizer_config],
+            parameters=[{"config_path": localizer_config}],
         ),
 
         # 9. RViz2 可视化 (可选)

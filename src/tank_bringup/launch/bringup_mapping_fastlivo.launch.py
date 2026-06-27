@@ -103,7 +103,7 @@ def generate_launch_description():
             executable="pgo_node",
             name="pgo",
             output="screen",
-            parameters=[pgo_config],
+            parameters=[{"config_path": pgo_config}],
         ),
 
         # 9. RViz

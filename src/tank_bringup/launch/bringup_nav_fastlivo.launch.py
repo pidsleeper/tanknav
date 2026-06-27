@@ -190,7 +190,7 @@ def generate_launch_description():
             executable="localizer_node",
             name="localizer",
             output="screen",
-            parameters=[localizer_cfg],
+            parameters=[{"config_path": localizer_cfg}],
         ),
 
         # 9. 点云转激光扫描 (cloud_in=/cloud_body body系, scan=/scan)
