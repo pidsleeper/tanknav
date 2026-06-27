@@ -86,6 +86,18 @@ def generate_launch_description():
         "pcd_save.pcd_save_en": False,
         "publish.dense_map_en": False,
         "dynamic_sync.dynamic_img_sync_en": True,
+        "parameter_blackboard.cam_model": "Pinhole",
+        "parameter_blackboard.cam_width": 1280,
+        "parameter_blackboard.cam_height": 720,
+        "parameter_blackboard.scale": 0.5,
+        "parameter_blackboard.cam_fx": 920.0,
+        "parameter_blackboard.cam_fy": 920.0,
+        "parameter_blackboard.cam_cx": 640.0,
+        "parameter_blackboard.cam_cy": 360.0,
+        "parameter_blackboard.cam_d0": 0.0,
+        "parameter_blackboard.cam_d1": 0.0,
+        "parameter_blackboard.cam_d2": 0.0,
+        "parameter_blackboard.cam_d3": 0.0,
     }
     localizer_cfg = PathJoinSubstitution([
         FindPackageShare("tank_bringup"), "config", "localizer_mid360_fastlivo.yaml"

@@ -19,6 +19,18 @@ def generate_launch_description():
     livo_overrides = {
         "local_map.half_map_size": 50,
         "dynamic_sync.dynamic_img_sync_en": True,
+        "parameter_blackboard.cam_model": "Pinhole",
+        "parameter_blackboard.cam_width": 1280,
+        "parameter_blackboard.cam_height": 720,
+        "parameter_blackboard.scale": 0.5,
+        "parameter_blackboard.cam_fx": 920.0,
+        "parameter_blackboard.cam_fy": 920.0,
+        "parameter_blackboard.cam_cx": 640.0,
+        "parameter_blackboard.cam_cy": 360.0,
+        "parameter_blackboard.cam_d0": 0.0,
+        "parameter_blackboard.cam_d1": 0.0,
+        "parameter_blackboard.cam_d2": 0.0,
+        "parameter_blackboard.cam_d3": 0.0,
     }
     pgo_config = PathJoinSubstitution([
         FindPackageShare("tank_bringup"), "config", "pgo_mid360_fastlivo.yaml"
