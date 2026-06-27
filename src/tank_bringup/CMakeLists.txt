@@ -19,8 +19,8 @@ install(DIRECTORY
 
 install(PROGRAMS
   scripts/initialpose_bridge.py
-  tank_bringup/cloud_frame_transform.py
-  tank_bringup/fastlivo_nav_bridge.py
+  scripts/cloud_frame_transform.py
+  scripts/fastlivo_nav_bridge.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
