@@ -73,13 +73,24 @@
       half_map_size: 50
       sliding_thresh: 8.0
 
+    uav:
+      imu_rate_odom: false
+      gravity_align_en: true
+
     publish:
       dense_map_en: false
       pub_effect_point_en: false
       pub_plane_en: false
       pub_scan_num: 1
+      blind_rgb_points: 0.0
 
     pcd_save:
       pcd_save_en: true
+      type: 0
+      colmap_output_en: false
       interval: -1
       filter_size_pcd: 0.15
+
+    image_save:
+      img_save_en: false
+      interval: 1
