@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Bridge /initialpose -> /localizer/relocalize service call."""
+"""Bridge /initialpose -> /localizer/relocalize service call.
+Allows RViz 2D Pose Estimate to also set the localizer's initial position."""
 
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from interface.srv import Relocalize
+
 import math
 import threading
 
@@ -26,6 +28,7 @@ class InitialPoseBridge(Node):
         if not self._reloc_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn("/localizer/relocalize not available")
             return
+
         p = msg.pose.pose.position
         q = msg.pose.pose.orientation
         yaw = math.atan2(
@@ -40,6 +43,7 @@ class InitialPoseBridge(Node):
         req.yaw = yaw
         req.pitch = 0.0
         req.roll = 0.0
+
         with self._lock:
             future = self._reloc_client.call_async(req)
             future.add_done_callback(self.done_cb)
