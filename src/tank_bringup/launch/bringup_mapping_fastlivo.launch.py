@@ -18,7 +18,6 @@ def generate_launch_description():
     ])
     livo_overrides = {
         "local_map.half_map_size": 50,
-        "publish.dense_map_en": False,
         "dynamic_sync.dynamic_img_sync_en": True,
     }
     pgo_config = PathJoinSubstitution([
