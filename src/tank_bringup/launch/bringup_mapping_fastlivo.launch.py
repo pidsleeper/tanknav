@@ -17,7 +17,6 @@ def generate_launch_description():
         FindPackageShare("fast_livo"), "config", "avia.yaml"
     ])
     livo_overrides = {
-        "local_map.half_map_size": 50,
         "dynamic_sync.dynamic_img_sync_en": False,
         "parameter_blackboard.cam_model": "Pinhole",
         "parameter_blackboard.cam_width": 1280,
