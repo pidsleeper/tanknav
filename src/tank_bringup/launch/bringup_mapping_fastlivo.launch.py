@@ -106,13 +106,13 @@ def generate_launch_description():
             parameters=[pgo_config],
         ),
 
-        # 9. RViz 可视化 (可选, 使用 mapping.rviz 配置)
+        # 9. RViz
         Node(
             package="rviz2",
             executable="rviz2",
-            name="rviz2_mapping",
+            name="rviz2",
             arguments=["-d", PathJoinSubstitution([
-                FindPackageShare("tank_bringup"), "rviz", "mapping.rviz"
+                FindPackageShare("fast_livo"), "rviz_cfg", "fast_livo2.rviz"
             ])],
             output="screen",
             condition=IfCondition(LaunchConfiguration("use_rviz")),
