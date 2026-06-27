@@ -76,9 +76,20 @@ def nav_setup(context, *args, **kwargs):
 
 def generate_launch_description():
     # 所有配置路径通过 FindPackageShare + PathJoinSubstitution 构造
+    # LIVO 基础配置直接引用 fast_livo 包中的 avia.yaml，改动自动同步
     fastlivo_cfg = PathJoinSubstitution([
-        FindPackageShare("tank_bringup"), "config", "fastlivo_mid360_nav.yaml"
+        FindPackageShare("fast_livo"), "config", "avia.yaml"
     ])
+    livo_overrides = {
+        "extrin_calib.Rcl": [0.00610193,-0.999863,-0.0154172,
+                             -0.00615449,0.0153796,-0.999863,
+                             0.999962,0.00619598,-0.0060598],
+        "local_map.map_sliding_en": True,
+        "local_map.half_map_size": 50,
+        "pcd_save.pcd_save_en": False,
+        "publish.dense_map_en": False,
+        "dynamic_sync.dynamic_img_sync_en": True,
+    }
     localizer_cfg = PathJoinSubstitution([
         FindPackageShare("tank_bringup"), "config", "localizer_mid360_fastlivo.yaml"
     ])
@@ -148,7 +159,7 @@ def generate_launch_description():
             package="fast_livo",
             executable="fastlivo_mapping",
             name="laserMapping",
-            parameters=[fastlivo_cfg],
+            parameters=[fastlivo_cfg, livo_overrides],
             output="screen",
             respawn=True,
         ),

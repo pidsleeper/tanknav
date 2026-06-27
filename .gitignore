@@ -8,3 +8,4 @@ __pycache__/
 *.bag
 *.bag/
 .env
+.sisyphus/

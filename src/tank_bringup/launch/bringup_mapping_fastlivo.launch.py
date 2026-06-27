@@ -14,8 +14,16 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description():
     # 配置文件路径
     fastlivo_config = PathJoinSubstitution([
-        FindPackageShare("tank_bringup"), "config", "fastlivo_mid360.yaml"
+        FindPackageShare("fast_livo"), "config", "avia.yaml"
     ])
+    livo_overrides = {
+        "extrin_calib.Rcl": [0.00610193,-0.999863,-0.0154172,
+                             -0.00615449,0.0153796,-0.999863,
+                             0.999962,0.00619598,-0.0060598],
+        "local_map.half_map_size": 50,
+        "publish.dense_map_en": False,
+        "dynamic_sync.dynamic_img_sync_en": True,
+    }
     pgo_config = PathJoinSubstitution([
         FindPackageShare("tank_bringup"), "config", "pgo_mid360_fastlivo.yaml"
     ])
@@ -66,7 +74,7 @@ def generate_launch_description():
             package="fast_livo",
             executable="fastlivo_mapping",
             name="laserMapping",
-            parameters=[fastlivo_config],
+            parameters=[fastlivo_config, livo_overrides],
             output="screen",
             respawn=True,
         ),
