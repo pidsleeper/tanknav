@@ -85,7 +85,7 @@ def generate_launch_description():
         "local_map.half_map_size": 50,
         "pcd_save.pcd_save_en": False,
         "publish.dense_map_en": False,
-        "dynamic_sync.dynamic_img_sync_en": True,
+        "dynamic_sync.dynamic_img_sync_en": False,
         "parameter_blackboard.cam_model": "Pinhole",
         "parameter_blackboard.cam_width": 1280,
         "parameter_blackboard.cam_height": 720,
