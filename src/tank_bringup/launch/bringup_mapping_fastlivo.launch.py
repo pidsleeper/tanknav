@@ -3,7 +3,7 @@
 # 组件: 静态TF + 底盘 + 激光雷达 + RealSense + FAST-LIVO2 + 点云变换 + bridge + PGO + RViz
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
@@ -65,14 +65,17 @@ def generate_launch_description():
             }],
         ),
 
-        # 5. FAST-LIVO2 建图 (建图配置: map_sliding_en=false, pcd_save_en=true)
-        Node(
-            package="fast_livo",
-            executable="fastlivo_mapping",
-            name="laserMapping",
-            parameters=[fastlivo_config, livo_overrides],
-            output="screen",
-            respawn=True,
+        # 5. FAST-LIVO2 建图
+        TimerAction(
+            period=4.0,
+            actions=[Node(
+                package="fast_livo",
+                executable="fastlivo_mapping",
+                name="laserMapping",
+                parameters=[fastlivo_config, livo_overrides],
+                output="screen",
+                respawn=True,
+            )],
         ),
 
         # 6. 点云坐标系转换: /cloud_registered → /cloud_body (供 pgo 使用)
